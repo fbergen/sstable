@@ -47,11 +47,15 @@ impl Table {
     /// Creates a new table reader.
     pub fn new(opt: Options, file: Box<dyn RandomAccess>, size: usize) -> Result<Table> {
         let footer = read_footer(file.as_ref(), size)?;
+        println!("Footer: {:?}", footer);
         let index_block = table_block::read_table_block(opt.clone(), file.as_ref(), &footer.index)?;
+        println!("Index read {:?}", &footer.index);
         let metaindex_block =
             table_block::read_table_block(opt.clone(), file.as_ref(), &footer.meta_index)?;
+        println!("Metadata read {:?}", &footer.meta_index);
 
         let filter_block_reader = Table::read_filter_block(&metaindex_block, file.as_ref(), &opt)?;
+        println!("Filter read");
         let cache_id = {
             let mut block_cache = opt.block_cache.write()?;
             block_cache.new_cache_id()
@@ -81,14 +85,17 @@ impl Table {
         let mut metaindexiter = metaix.iter();
         metaindexiter.seek(&filter_name);
 
-        if let Some((_key, val)) = current_key_val(&metaindexiter) {
-            let filter_block_location = BlockHandle::decode(&val).0;
-            if filter_block_location.size() > 0 {
-                return Ok(Some(table_block::read_filter_block(
-                    file,
-                    &filter_block_location,
-                    options.filter_policy.clone(),
-                )?));
+        if let Some((key, val)) = current_key_val(&metaindexiter) {
+            if filter_name == key {
+                let filter_block_location = BlockHandle::decode(&val).0;
+                if filter_block_location.size() > 0 {
+                    println!("Filter read {:?}", &filter_block_location);
+                    return Ok(Some(table_block::read_filter_block(
+                        file,
+                        &filter_block_location,
+                        options.filter_policy.clone(),
+                    )?));
+                }
             }
         }
         Ok(None)
@@ -459,7 +466,6 @@ mod tests {
         assert_eq!(opt.block_cache.read().expect(LOCK_POISONED).count(), 1);
         iter.next();
         assert_eq!(opt.block_cache.read().expect(LOCK_POISONED).count(), 1);
-
     }
 
     #[test]
