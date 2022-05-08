@@ -14,6 +14,7 @@ edition = "2018"
 crc = "1.2"
 integer-encoding = "1.0"
 snap = "0.2"
+tracing = "0.1"
 
 [dev-dependencies]
 time-test = "0.2"

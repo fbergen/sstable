@@ -7,6 +7,7 @@ use crate::options::Options;
 use crate::table_block;
 use crate::table_builder::{self, Footer};
 use crate::types::{current_key_val, RandomAccess, SSIterator};
+use tracing::debug;
 
 use std::cmp::Ordering;
 use std::fs;
@@ -47,15 +48,15 @@ impl Table {
     /// Creates a new table reader.
     pub fn new(opt: Options, file: Box<dyn RandomAccess>, size: usize) -> Result<Table> {
         let footer = read_footer(file.as_ref(), size)?;
-        println!("Footer: {:?}", footer);
+        debug!("Footer: {:?}", footer);
         let index_block = table_block::read_table_block(opt.clone(), file.as_ref(), &footer.index)?;
-        println!("Index read {:?}", &footer.index);
+        debug!("Index read {:?}", &footer.index);
         let metaindex_block =
             table_block::read_table_block(opt.clone(), file.as_ref(), &footer.meta_index)?;
-        println!("Metadata read {:?}", &footer.meta_index);
+        debug!("Metadata read {:?}", &footer.meta_index);
 
         let filter_block_reader = Table::read_filter_block(&metaindex_block, file.as_ref(), &opt)?;
-        println!("Filter read");
+        debug!("Filter read");
         let cache_id = {
             let mut block_cache = opt.block_cache.write()?;
             block_cache.new_cache_id()
@@ -89,7 +90,7 @@ impl Table {
             if filter_name == key {
                 let filter_block_location = BlockHandle::decode(&val).0;
                 if filter_block_location.size() > 0 {
-                    println!("Filter read {:?}", &filter_block_location);
+                    debug!("Filter read {:?}", &filter_block_location);
                     return Ok(Some(table_block::read_filter_block(
                         file,
                         &filter_block_location,
@@ -118,9 +119,11 @@ impl Table {
     /// cache.
     fn read_block(&self, location: &BlockHandle) -> Result<Block> {
         let cachekey = self.block_cache_handle(location.offset());
-        let mut block_cache = self.opt.block_cache.write()?;
-        if let Some(block) = block_cache.get(&cachekey) {
-            return Ok(block.clone());
+        {
+            let mut block_cache = self.opt.block_cache.write()?;
+            if let Some(block) = block_cache.get(&cachekey) {
+                return Ok(block.clone());
+            }
         }
 
         // Two times as_ref(): First time to get a ref from Rc<>, then one from Box<>.
@@ -128,7 +131,10 @@ impl Table {
             table_block::read_table_block(self.opt.clone(), self.file.as_ref().as_ref(), location)?;
 
         // insert a cheap copy (Arc).
-        block_cache.insert(&cachekey, b.clone());
+        {
+            let mut block_cache = self.opt.block_cache.write()?;
+            block_cache.insert(&cachekey, b.clone());
+        }
 
         Ok(b)
     }
